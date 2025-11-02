@@ -2,8 +2,9 @@
   "name": "gitcd-vscode",
   "displayName": "Git-CD",
   "description": "VSCode extension for git-cd continuous delivery workflow tool",
-  "version": "0.0.12",
+  "version": "0.0.14",
   "publisher": "gitcd-io",
+  "icon": "images/logo.png",
   "engines": {
     "vscode": "^1.85.0"
   },
