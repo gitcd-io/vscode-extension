@@ -253,31 +253,19 @@ async function runGitCdCommand(context: vscode.ExtensionContext, args: string[])
             // Add to pending buffer
             pendingOutput += output;
 
-            // Detect if git-cd is asking a question (common patterns)
-            const yesNoPatterns = [
-                /\[y\/n\]/i,  // Contains [y/n]
-                /\(yes\/no\)/i,  // Contains (yes/no)
-            ];
+            // Detect if git-cd is asking a question
+            // Check if output contains a question mark indicating a prompt
+            const hasQuestion = /\?/.test(cleanOutput);
 
-            const textInputPatterns = [
-                /\?\s*$/,  // Ends with ?
-                /Default:\s*.+$/m,  // Contains "Default: something"
-                /continue\?/i,
-                /proceed\?/i,
-                /do you want/i
-            ];
-
-            const hasYesNoQuestion = yesNoPatterns.some(pattern => pattern.test(cleanOutput));
-            const hasTextInputQuestion = textInputPatterns.some(pattern => pattern.test(cleanOutput));
-
-            if ((hasYesNoQuestion || hasTextInputQuestion) && child.stdin.writable) {
-                // Extract the question text from accumulated output
+            if (hasQuestion && child.stdin.writable) {
+                // Extract the question text and options from accumulated output
                 const cleanPendingOutput = stripAnsiCodes(pendingOutput);
                 const lines = cleanPendingOutput.trim().split('\n');
 
                 // Find the line with the actual question (usually contains '?')
                 let questionText = '';
                 let defaultValue = '';
+                let possibilities: string[] = [];
 
                 for (let i = lines.length - 1; i >= 0; i--) {
                     const line = lines[i].trim();
@@ -292,25 +280,56 @@ async function runGitCdCommand(context: vscode.ExtensionContext, args: string[])
                     questionText = lines.filter(l => l.trim()).pop() || cleanOutput.trim();
                 }
 
+                // Check for possibilities pattern: "Possibilities: [option1, option2, option3]"
+                const possibilitiesMatch = cleanPendingOutput.match(/Possibilities:\s*\[([^\]]+)\]/i);
+                if (possibilitiesMatch) {
+                    // Parse the possibilities list
+                    possibilities = possibilitiesMatch[1].split(',').map(p => p.trim());
+                }
+
                 // Check for default value pattern
                 const defaultMatch = cleanPendingOutput.match(/Default:\s*(.+?)$/m);
                 if (defaultMatch) {
                     defaultValue = defaultMatch[1].trim();
                 }
 
-                if (hasYesNoQuestion) {
-                    // Remove trailing [y/n] or (yes/no) from question text for cleaner display
-                    questionText = questionText.replace(/\s*\[y\/n\]\s*:?\s*$/i, '');
-                    questionText = questionText.replace(/\s*\(yes\/no\)\s*:?\s*$/i, '');
+                // Determine question type and show appropriate UI
+                if (possibilities.length > 0) {
+                    // Multiple choice question - show as quick pick
+                    // Remove trailing punctuation from question text for cleaner display
+                    const cleanQuestionText = questionText.replace(/\s*:?\s*$/, '');
 
-                    // Show VSCode quick pick for yes/no questions
-                    const answer = await vscode.window.showQuickPick(['Yes', 'No'], {
-                        placeHolder: questionText,
+                    const answer = await vscode.window.showQuickPick(possibilities, {
+                        placeHolder: cleanQuestionText,
                         title: 'Git-CD Question'
                     });
 
                     if (answer) {
-                        const response = answer.toLowerCase() + '\n';  // Send full 'yes' or 'no'
+                        const response = answer + '\n';
+                        child.stdin.write(response);
+                        outputChannel.appendLine(`[User selected: ${answer}]`);
+                    } else {
+                        // User cancelled - send default if available, otherwise kill
+                        if (defaultValue && possibilities.includes(defaultValue)) {
+                            child.stdin.write(defaultValue + '\n');
+                            outputChannel.appendLine(`[User cancelled - using default: ${defaultValue}]`);
+                        } else {
+                            child.kill();
+                        }
+                    }
+                } else if (/\[y\/n\]/i.test(questionText) || /\(yes\/no\)/i.test(questionText)) {
+                    // Yes/No question - show as quick pick with yes/no options
+                    const cleanQuestionText = questionText
+                        .replace(/\s*\[y\/n\]\s*:?\s*$/i, '')
+                        .replace(/\s*\(yes\/no\)\s*:?\s*$/i, '');
+
+                    const answer = await vscode.window.showQuickPick(['yes', 'no'], {
+                        placeHolder: cleanQuestionText,
+                        title: 'Git-CD Question'
+                    });
+
+                    if (answer) {
+                        const response = answer + '\n';
                         child.stdin.write(response);
                         outputChannel.appendLine(`[User selected: ${answer}]`);
                     } else {
@@ -319,7 +338,7 @@ async function runGitCdCommand(context: vscode.ExtensionContext, args: string[])
                         child.kill();
                     }
                 } else {
-                    // Text input question
+                    // Free text input question - show input box
                     const answer = await vscode.window.showInputBox({
                         prompt: questionText,
                         value: defaultValue,
