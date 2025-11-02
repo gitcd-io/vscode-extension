@@ -1,0 +1,14 @@
+.vscode-test/**
+.gitignore
+.vscode/**
+**/*.map
+.git
+.DS_Store
+tsconfig.json
+**/*.ts
+**/*.js.map
+**/tsconfig.json
+node_modules
+src/**
+.eslintrc.json
+python-env/**

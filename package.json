@@ -1,0 +1,130 @@
+{
+  "name": "gitcd-vscode",
+  "displayName": "Git-CD",
+  "description": "VSCode extension for git-cd continuous delivery workflow tool",
+  "version": "0.0.1",
+  "publisher": "gitcd-io",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "continuous delivery",
+    "workflow",
+    "gitcd",
+    "git-cd"
+  ],
+  "activationEvents": [
+    "onCommand:gitcd.init",
+    "workspaceContains:.git"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitcd.init",
+        "title": "Git-CD: Initialize"
+      },
+      {
+        "command": "gitcd.start",
+        "title": "Git-CD: Start Feature"
+      },
+      {
+        "command": "gitcd.refresh",
+        "title": "Git-CD: Refresh Feature"
+      },
+      {
+        "command": "gitcd.test",
+        "title": "Git-CD: Test Feature"
+      },
+      {
+        "command": "gitcd.review",
+        "title": "Git-CD: Review (Open Pull Request)"
+      },
+      {
+        "command": "gitcd.status",
+        "title": "Git-CD: Status (Check Pull Request)"
+      },
+      {
+        "command": "gitcd.finish",
+        "title": "Git-CD: Finish Feature"
+      },
+      {
+        "command": "gitcd.compare",
+        "title": "Git-CD: Compare"
+      },
+      {
+        "command": "gitcd.release",
+        "title": "Git-CD: Release"
+      },
+      {
+        "command": "gitcd.clean",
+        "title": "Git-CD: Clean Branches"
+      },
+      {
+        "command": "gitcd.version",
+        "title": "Git-CD: Check Version"
+      },
+      {
+        "command": "gitcd.upgrade",
+        "title": "Git-CD: Upgrade"
+      }
+    ],
+    "configuration": {
+      "title": "Git-CD",
+      "properties": {
+        "gitcd.useBundledPython": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use the bundled Python environment (recommended)"
+        },
+        "gitcd.pythonPath": {
+          "type": "string",
+          "default": "/usr/bin/python3",
+          "description": "Path to Python 3 executable (e.g., /usr/bin/python3, python3)"
+        },
+        "gitcd.gitcdPath": {
+          "type": "string",
+          "default": "~/.local/bin/git-cd",
+          "description": "Path to git-cd executable (e.g., git-cd, ~/.local/bin/git-cd)"
+        },
+        "gitcd.showOutputOnExecution": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically show output panel when executing git-cd commands"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "18.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/test-electron": "^2.3.8",
+    "@vscode/vsce": "^3.6.2",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gitcd-io/vscode-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/gitcd-io/vscode-extension/issues"
+  },
+  "homepage": "https://gitcd.readthedocs.io/en/latest/",
+  "license": "Apache-2.0"
+}
