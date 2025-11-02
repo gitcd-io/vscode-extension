@@ -107,14 +107,13 @@
     }
   },
   "scripts": {
-    "update-version": "./update-version.sh",
-    "vscode:prepublish": "npm run update-version && npm run compile",
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "package": "npm run update-version && npx vsce package"
+    "package": "npx vsce package"
   },
   "devDependencies": {
     "@types/node": "18.x",
