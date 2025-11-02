@@ -8,9 +8,54 @@ import * as os from 'os';
 const execAsync = promisify(exec);
 let outputChannel: vscode.OutputChannel;
 
+// Helper function to strip ANSI color codes
+function stripAnsiCodes(text: string): string {
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+// Helper function to find SSH auth socket
+function findSshAuthSocket(): string | undefined {
+    // Check if user has manually configured SSH socket in settings
+    const config = vscode.workspace.getConfiguration('gitcd');
+    const configuredSocket = config.get<string>('sshAuthSock', '');
+    if (configuredSocket && fs.existsSync(configuredSocket)) {
+        return configuredSocket;
+    }
+
+    // Try environment variable
+    if (process.env.SSH_AUTH_SOCK && fs.existsSync(process.env.SSH_AUTH_SOCK)) {
+        return process.env.SSH_AUTH_SOCK;
+    }
+
+    // Try common locations for SSH agent sockets
+    // IMPORTANT: GPG agent is checked first as it's more likely to have YubiKey/hardware keys
+    const uid = os.userInfo().uid;
+    const possiblePaths = [
+        `/run/user/${uid}/gnupg/S.gpg-agent.ssh`,  // GPG agent (preferred - supports hardware keys)
+        `${os.homedir()}/.gnupg/S.gpg-agent.ssh`,
+        `/run/user/${uid}/keyring/.ssh`,           // GNOME Keyring hidden socket
+        `/run/user/${uid}/keyring/ssh`,            // GNOME Keyring SSH agent
+        `/tmp/ssh-*/agent.*`
+    ];
+
+    for (const socketPath of possiblePaths) {
+        if (socketPath.includes('*')) {
+            // Skip glob patterns for now - would need to implement glob matching
+            continue;
+        }
+        if (fs.existsSync(socketPath)) {
+            return socketPath;
+        }
+    }
+
+    return undefined;
+}
+
 export function activate(context: vscode.ExtensionContext) {
+    // Create regular output channel (LogOutputChannel doesn't render ANSI colors properly)
     outputChannel = vscode.window.createOutputChannel('Git-CD');
-    
+
     console.log('Git-CD extension is now active');
 
     // Check and setup Python environment on activation
@@ -49,7 +94,7 @@ export function deactivate() {
 async function ensurePythonEnvironment(context: vscode.ExtensionContext): Promise<void> {
     const config = vscode.workspace.getConfiguration('gitcd');
     const useBundled = config.get<boolean>('useBundledPython', true);
-    
+
     if (!useBundled) {
         return;
     }
@@ -73,14 +118,14 @@ async function ensurePythonEnvironment(context: vscode.ExtensionContext): Promis
         const { stdout, stderr } = await execAsync(`bash "${setupScript}"`, {
             cwd: context.extensionPath
         });
-        
+
         if (stdout) {
             outputChannel.appendLine(stdout);
         }
         if (stderr) {
             outputChannel.appendLine(stderr);
         }
-        
+
         vscode.window.showInformationMessage('Git-CD environment setup complete!');
     } catch (error: any) {
         outputChannel.appendLine(`Setup failed: ${error.message}`);
@@ -133,6 +178,11 @@ async function runGitCdCommand(context: vscode.ExtensionContext, args: string[])
 
     const { pythonPath, gitcdPath } = getPythonAndGitcdPaths(context);
 
+    outputChannel.appendLine(`Checking paths...`);
+    outputChannel.appendLine(`Extension path: ${context.extensionPath}`);
+    outputChannel.appendLine(`Python: ${pythonPath} (exists: ${fs.existsSync(pythonPath)})`);
+    outputChannel.appendLine(`Git-CD: ${gitcdPath} (exists: ${fs.existsSync(gitcdPath)})`);
+
     // Check if files exist
     if (!fs.existsSync(pythonPath)) {
         vscode.window.showErrorMessage(`Python not found at: ${pythonPath}. Please check settings.`, 'Open Settings')
@@ -147,37 +197,126 @@ async function runGitCdCommand(context: vscode.ExtensionContext, args: string[])
     }
 
     outputChannel.appendLine(`Running: git-cd ${args.join(' ')}`);
-    outputChannel.appendLine(`Python: ${pythonPath}`);
-    outputChannel.appendLine(`Git-CD: ${gitcdPath}`);
     outputChannel.appendLine(`Working directory: ${workspaceFolder.uri.fsPath}`);
+
+    // Find SSH auth socket
+    const sshAuthSock = findSshAuthSocket();
+    outputChannel.appendLine(`SSH_AUTH_SOCK: ${sshAuthSock || '(not found)'}`);
     outputChannel.appendLine('---');
 
     return new Promise((resolve, reject) => {
-        const env = { 
+        const env: NodeJS.ProcessEnv = {
             ...process.env,
             HOME: os.homedir(),
             USER: process.env.USER || os.userInfo().username,
+            // Force git-cd to run in non-interactive mode if possible
+            GITCD_INTERACTIVE: 'false',
+            GIT_TERMINAL_PROMPT: '0'
         };
+
+        // Add SSH auth socket if found
+        if (sshAuthSock) {
+            env.SSH_AUTH_SOCK = sshAuthSock;
+        }
+
+        // Pass GPG TTY for signing commits if configured
+        if (process.env.GPG_TTY) {
+            env.GPG_TTY = process.env.GPG_TTY;
+        }
 
         const child = spawn(pythonPath, [gitcdPath, ...args], {
             cwd: workspaceFolder.uri.fsPath,
             env: env,
-            shell: false
+            shell: false,
+            stdio: ['pipe', 'pipe', 'pipe']  // Enable stdin for interactive prompts
         });
 
         let stdout = '';
         let stderr = '';
+        let pendingOutput = '';  // Buffer for incomplete lines
 
-        child.stdout.on('data', (data) => {
+        child.stdout.on('data', async (data) => {
             const output = data.toString();
             stdout += output;
-            outputChannel.append(output);
+
+            // Strip ANSI codes for display and question detection
+            const cleanOutput = stripAnsiCodes(output);
+
+            // Split into lines, trim each, remove lines that are only whitespace, then rejoin
+            const cleanedLines = cleanOutput.split('\n').map(line => {
+                const trimmed = line.trimEnd();
+                return trimmed;
+            }).join('\n');
+
+            outputChannel.append(cleanedLines);
+
+            // Add to pending buffer
+            pendingOutput += output;
+
+            // Detect if git-cd is asking a question (common patterns)
+            const questionPatterns = [
+                /\?\s*$/,  // Ends with ?
+                /\[y\/n\]/i,  // Contains [y/n]
+                /\(yes\/no\)/i,  // Contains (yes/no)
+                /continue\?/i,
+                /proceed\?/i,
+                /do you want/i
+            ];
+
+            const hasQuestion = questionPatterns.some(pattern => pattern.test(cleanOutput));
+
+            if (hasQuestion && child.stdin.writable) {
+                // Extract the question text from accumulated output
+                const cleanPendingOutput = stripAnsiCodes(pendingOutput);
+                const lines = cleanPendingOutput.trim().split('\n');
+
+                // Find the line with the actual question (usually contains '?')
+                let questionText = '';
+                for (let i = lines.length - 1; i >= 0; i--) {
+                    const line = lines[i].trim();
+                    if (line.includes('?')) {
+                        questionText = line;
+                        break;
+                    }
+                }
+
+                // If we didn't find a '?', use the last non-empty line
+                if (!questionText) {
+                    questionText = lines.filter(l => l.trim()).pop() || cleanOutput.trim();
+                }
+
+                // Remove trailing [y/n] or (yes/no) from question text for cleaner display
+                questionText = questionText.replace(/\s*\[y\/n\]\s*:?\s*$/i, '');
+                questionText = questionText.replace(/\s*\(yes\/no\)\s*:?\s*$/i, '');
+
+                // Show VSCode quick pick for yes/no questions
+                const answer = await vscode.window.showQuickPick(['Yes', 'No'], {
+                    placeHolder: questionText,
+                    title: 'Git-CD Question'
+                });
+
+                if (answer) {
+                    const response = answer.toLowerCase() + '\n';  // Send full 'yes' or 'no'
+                    child.stdin.write(response);
+                    outputChannel.appendLine(`[User selected: ${answer}]`);
+                } else {
+                    // User cancelled - send 'no' and kill process
+                    child.stdin.write('no\n');
+                    child.kill();
+                }
+
+                // Clear pending output after handling question
+                pendingOutput = '';
+            }
         });
 
         child.stderr.on('data', (data) => {
             const output = data.toString();
             stderr += output;
-            outputChannel.append(output);
+            // Strip ANSI codes from stderr too and clean up whitespace
+            const cleanOutput = stripAnsiCodes(output);
+            const cleanedLines = cleanOutput.split('\n').map(line => line.trimEnd()).join('\n');
+            outputChannel.append(cleanedLines);
         });
 
         child.on('error', (error) => {

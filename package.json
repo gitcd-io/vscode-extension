@@ -2,7 +2,7 @@
   "name": "gitcd-vscode",
   "displayName": "Git-CD",
   "description": "VSCode extension for git-cd continuous delivery workflow tool",
-  "version": "0.0.1",
+  "version": "0.0.12",
   "publisher": "gitcd-io",
   "engines": {
     "vscode": "^1.85.0"
@@ -91,6 +91,11 @@
           "type": "string",
           "default": "~/.local/bin/git-cd",
           "description": "Path to git-cd executable (e.g., git-cd, ~/.local/bin/git-cd)"
+        },
+        "gitcd.sshAuthSock": {
+          "type": "string",
+          "default": "",
+          "description": "Path to SSH agent socket (leave empty for auto-detection, e.g., /run/user/1000/gnupg/S.gpg-agent.ssh)"
         },
         "gitcd.showOutputOnExecution": {
           "type": "boolean",
