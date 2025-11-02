@@ -1,0 +1,8 @@
+extraReleaseCommand: null
+feature: feature-
+master: main
+preReleaseCommand: update-version.sh
+tag: v
+test: test
+versionScheme: version.txt
+versionType: file
