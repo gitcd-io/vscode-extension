@@ -21,11 +21,6 @@ This extension provides Command Palette integration for all git-cd commands:
 - **Git-CD: Check Version** - Display git-cd version
 - **Git-CD: Upgrade** - Upgrade git-cd to latest version
 
-Requirements
-------------
-
-- git-cd must be installed on your system
-- Install with: ``pip3 install --user --upgrade gitcd``
 
 Installation
 ------------
