@@ -2,7 +2,7 @@
   "name": "gitcd-vscode",
   "displayName": "Git-CD",
   "description": "VSCode extension for git-cd continuous delivery workflow tool",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "publisher": "gitcd-io",
   "icon": "images/logo.png",
   "engines": {
@@ -107,12 +107,14 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "update-version": "./update-version.sh",
+    "vscode:prepublish": "npm run update-version && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "package": "npm run update-version && npx vsce package"
   },
   "devDependencies": {
     "@types/node": "18.x",

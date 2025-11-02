@@ -254,24 +254,31 @@ async function runGitCdCommand(context: vscode.ExtensionContext, args: string[])
             pendingOutput += output;
 
             // Detect if git-cd is asking a question (common patterns)
-            const questionPatterns = [
-                /\?\s*$/,  // Ends with ?
+            const yesNoPatterns = [
                 /\[y\/n\]/i,  // Contains [y/n]
                 /\(yes\/no\)/i,  // Contains (yes/no)
+            ];
+
+            const textInputPatterns = [
+                /\?\s*$/,  // Ends with ?
+                /Default:\s*.+$/m,  // Contains "Default: something"
                 /continue\?/i,
                 /proceed\?/i,
                 /do you want/i
             ];
 
-            const hasQuestion = questionPatterns.some(pattern => pattern.test(cleanOutput));
+            const hasYesNoQuestion = yesNoPatterns.some(pattern => pattern.test(cleanOutput));
+            const hasTextInputQuestion = textInputPatterns.some(pattern => pattern.test(cleanOutput));
 
-            if (hasQuestion && child.stdin.writable) {
+            if ((hasYesNoQuestion || hasTextInputQuestion) && child.stdin.writable) {
                 // Extract the question text from accumulated output
                 const cleanPendingOutput = stripAnsiCodes(pendingOutput);
                 const lines = cleanPendingOutput.trim().split('\n');
 
                 // Find the line with the actual question (usually contains '?')
                 let questionText = '';
+                let defaultValue = '';
+
                 for (let i = lines.length - 1; i >= 0; i--) {
                     const line = lines[i].trim();
                     if (line.includes('?')) {
@@ -285,24 +292,48 @@ async function runGitCdCommand(context: vscode.ExtensionContext, args: string[])
                     questionText = lines.filter(l => l.trim()).pop() || cleanOutput.trim();
                 }
 
-                // Remove trailing [y/n] or (yes/no) from question text for cleaner display
-                questionText = questionText.replace(/\s*\[y\/n\]\s*:?\s*$/i, '');
-                questionText = questionText.replace(/\s*\(yes\/no\)\s*:?\s*$/i, '');
+                // Check for default value pattern
+                const defaultMatch = cleanPendingOutput.match(/Default:\s*(.+?)$/m);
+                if (defaultMatch) {
+                    defaultValue = defaultMatch[1].trim();
+                }
 
-                // Show VSCode quick pick for yes/no questions
-                const answer = await vscode.window.showQuickPick(['Yes', 'No'], {
-                    placeHolder: questionText,
-                    title: 'Git-CD Question'
-                });
+                if (hasYesNoQuestion) {
+                    // Remove trailing [y/n] or (yes/no) from question text for cleaner display
+                    questionText = questionText.replace(/\s*\[y\/n\]\s*:?\s*$/i, '');
+                    questionText = questionText.replace(/\s*\(yes\/no\)\s*:?\s*$/i, '');
 
-                if (answer) {
-                    const response = answer.toLowerCase() + '\n';  // Send full 'yes' or 'no'
-                    child.stdin.write(response);
-                    outputChannel.appendLine(`[User selected: ${answer}]`);
+                    // Show VSCode quick pick for yes/no questions
+                    const answer = await vscode.window.showQuickPick(['Yes', 'No'], {
+                        placeHolder: questionText,
+                        title: 'Git-CD Question'
+                    });
+
+                    if (answer) {
+                        const response = answer.toLowerCase() + '\n';  // Send full 'yes' or 'no'
+                        child.stdin.write(response);
+                        outputChannel.appendLine(`[User selected: ${answer}]`);
+                    } else {
+                        // User cancelled - send 'no' and kill process
+                        child.stdin.write('no\n');
+                        child.kill();
+                    }
                 } else {
-                    // User cancelled - send 'no' and kill process
-                    child.stdin.write('no\n');
-                    child.kill();
+                    // Text input question
+                    const answer = await vscode.window.showInputBox({
+                        prompt: questionText,
+                        value: defaultValue,
+                        placeHolder: defaultValue ? `Default: ${defaultValue}` : 'Enter value'
+                    });
+
+                    if (answer !== undefined) {
+                        const response = answer + '\n';
+                        child.stdin.write(response);
+                        outputChannel.appendLine(`[User entered: ${answer || '(empty - using default)'}]`);
+                    } else {
+                        // User cancelled - kill process
+                        child.kill();
+                    }
                 }
 
                 // Clear pending output after handling question
