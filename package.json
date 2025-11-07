@@ -3,7 +3,7 @@
   "displayName": "Git-CD",
   "description": "VSCode extension for git-cd continuous delivery workflow tool",
   "version": "0.1.2",
-  "publisher": "gitcd-io",
+  "publisher": "gitcd",
   "icon": "images/logo.png",
   "engines": {
     "vscode": "^1.85.0"
