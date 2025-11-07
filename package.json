@@ -127,10 +127,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/gitcd-io/vscode-extension.git"
+    "url": "https://github.com/gitcd-io/vscode-gitcd.git"
   },
   "bugs": {
-    "url": "https://github.com/gitcd-io/vscode-extension/issues"
+    "url": "https://github.com/gitcd-io/vscode-gitcd/issues"
   },
   "homepage": "https://gitcd.readthedocs.io/en/latest/",
   "license": "Apache-2.0"
